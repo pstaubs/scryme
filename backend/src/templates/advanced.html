@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Advanced search · scryme{% endblock %}
 {% block content %}
-<div class="max-w-3xl mx-auto px-4 py-6" x-data="advancedSearch()">
+<div class="max-w-3xl mx-auto px-4 py-6" x-data="advancedSearch({{pre_d}})">
   <header class="page-header flex flex-wrap items-center gap-3 mb-6">
     {% include "_brand.html" %}
     <h1 class="text-lg font-semibold">Advanced search</h1>
@@ -13,12 +13,12 @@
     <a class="underline" href="https://scryfall.com/docs/syntax" target="_blank" rel="noopener">Scryfall query</a>
     from your choices — the preview at the bottom shows exactly what it will run.
   </p>
-
+  
   <form @submit.prevent="go()" class="space-y-6">
     {# Text #}
     <fieldset class="rounded-xl bg-surface ring-1 ring-edge p-4 space-y-3">
       <legend class="px-1 text-sm font-semibold text-muted">Text</legend>
-      <label class="block">
+      <label class="block -mp-4">
         <span class="text-sm">Name contains</span>
         <input type="text" x-model="name" placeholder="e.g. bolt"
           class="mt-1 w-full rounded-lg bg-bg border border-edge px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent" />
@@ -211,9 +211,9 @@
 </div>
 
 <script>
-  function advancedSearch() {
-    return {
-      name: "", oracle: "", type: "",
+  function advancedSearch(prepopulated_data={}) {
+
+    empty_data = {name: "", oracle: "", type: "",
       colors: { W: false, U: false, B: false, R: false, G: false, C: false }, colorMode: ">=",
       identity: { W: false, U: false, B: false, R: false, G: false, C: false }, idMode: ">=",
       rarity: { common: false, uncommon: false, rare: false, mythic: false },
@@ -227,7 +227,11 @@
         { key: "tou", label: "Toughness", token: "tou", min: "", max: "" },
         { key: "loy", label: "Loyalty", token: "loy", min: "", max: "" },
       ],
-      selectedLocation: "",
+      selectedLocation: "",}
+
+    return {
+      ...empty_data,
+      ...prepopulated_data,
       _term(v) { return /\s/.test(v.trim()) ? '"' + v.trim() + '"' : v.trim(); },
       _colorTerm(map, mode, key) {
         var letters = ["W", "U", "B", "R", "G"].filter((c) => map[c]).join("").toLowerCase();

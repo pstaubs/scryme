@@ -8,11 +8,11 @@ to the Scryfall CDN otherwise, so results never show broken images before the ca
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -155,20 +155,41 @@ def _to_views(result) -> list[CardView]:
     return views
 
 
+
 @router.get("/advanced", response_class=HTMLResponse)
-async def advanced(request: Request, session: AsyncSession = Depends(get_session)) -> HTMLResponse:
+async def advanced(request: Request, q: str = "", session: AsyncSession = Depends(get_session)) -> HTMLResponse:
     """Form-based query builder for users who don't know Scryfall syntax.
 
     The form assembles a Scryfall query string client-side (Alpine) and navigates to /search, so
     there's a single search-engine path and the generated query is visible/editable afterward.
+    
+    If a query parameter 'q' is provided, this will prefill the appropriate fields in the advanced form.
     """
     from src.locations import find_or_create_grouped_locations
     grouped_locations = await find_or_create_grouped_locations(session, binders=True, boxes=True, decks=True)
     
+    # Parse the query to prefill the form fields if present
+    prefilled_data = {}
+    
+    if q:
+        try:
+            # Import here to avoid circular dependencies
+            from src.search.parser import parse
+            from src.search.ast import Term
+            
+            ast = parse(q)
+            if ast is not None:
+                prefilled_data = _extract_prefill_data(ast)
+        except Exception:
+            # If parsing fails, just proceed with empty form
+            pass
+
     return templates.TemplateResponse(
         request, "advanced.html", {
             "read_only": get_settings().read_only,
-            "grouped_locations": grouped_locations
+            "grouped_locations": grouped_locations,
+            "pre_q": q,
+            "pre_d": prefilled_data
         }
     )
 
@@ -306,3 +327,119 @@ async def search(
     if dp.movers:
         ctx["movers"] = await memoize("movers", lambda: biggest_movers(session, limit=5))
     return templates.TemplateResponse(request, "search.html", ctx)
+
+
+def _extract_prefill_data(ast) -> dict:
+    """Extract prefilled data from parsed AST for advanced search form."""
+    from src.search.ast import Term
+    from src.search.parser import FIELD_ALIASES
+    
+    prefilled = {}
+    
+    def _traverse(node):
+        if isinstance(node, Term):
+            field_name = FIELD_ALIASES.get(node.field, node.field)
+            value = node.value
+            
+            # Handle different field types and map them to form fields
+            if field_name == "name":
+                prefilled["name"] = value
+            elif field_name == "oracle":
+                prefilled["oracle"] = value
+            elif field_name == "type":
+                prefilled["type"] = value
+            elif field_name == "color":
+                # For color, we need to map the letters back to checkboxes
+                if node.op == ":":
+                    # Handle c:rg format for color
+                    colors = []
+                    for char in value.lower():
+                        if char in ['w', 'u', 'b', 'r', 'g']:
+                            colors.append(char.upper())
+                    if colors:
+                        prefilled["colors"] = colors
+                elif node.op == ">=" or node.op == "<=":
+                    # Handle color filters like c>=wub
+                    if node.op == ">=":
+                        prefilled["colorMode"] = ">="
+                    else:  # node.op == "<="
+                        prefilled["colorMode"] = "<="
+            elif field_name == "identity":
+                # For identity, we need to map the letters back to checkboxes
+                if node.op == ":":
+                    # Handle id:rg format for identity
+                    colors = []
+                    for char in value.lower():
+                        if char in ['w', 'u', 'b', 'r', 'g']:
+                            colors.append(char.upper())
+                    if colors:
+                        prefilled["identity"] = colors
+                elif node.op == ">=" or node.op == "<=":
+                    # Handle identity filters like id>=wub
+                    if node.op == ">=":
+                        prefilled["idMode"] = ">="
+                    else:  # node.op == "<="
+                        prefilled["idMode"] = "<="
+            elif field_name == "mv":
+                if node.op == ">=":
+                    prefilled["mvMin"] = value
+                elif node.op == "<=":
+                    prefilled["mvMax"] = value
+                elif node.op == "=":
+                    prefilled["mvMin"] = value
+                    prefilled["mvMax"] = value
+            elif field_name == "power":
+                if node.op == ">=":
+                    prefilled["powMin"] = value
+                elif node.op == "<=":
+                    prefilled["powMax"] = value
+                elif node.op == "=":
+                    prefilled["powMin"] = value
+                    prefilled["powMax"] = value
+            elif field_name == "toughness":
+                if node.op == ">=":
+                    prefilled["touMin"] = value
+                elif node.op == "<=":
+                    prefilled["touMax"] = value
+                elif node.op == "=":
+                    prefilled["touMin"] = value
+                    prefilled["touMax"] = value
+            elif field_name == "loyalty":
+                if node.op == ">=":
+                    prefilled["loyMin"] = value
+                elif node.op == "<=":
+                    prefilled["loyMax"] = value
+                elif node.op == "=":
+                    prefilled["loyMin"] = value
+                    prefilled["loyMax"] = value
+            elif field_name == "rarity":
+                if node.op == ":":
+                    # Handle r:rare format
+                    prefilled["rarity"] = [value]
+            elif field_name == "set":
+                prefilled["set"] = value
+            elif field_name == "format":
+                prefilled["format"] = value
+            elif field_name == "keyword":
+                if node.op == ":":
+                    prefilled["keywords"] = value
+            elif field_name == "usd":
+                if node.op == ">=":
+                    prefilled["usdMin"] = value
+                elif node.op == "<=":
+                    prefilled["usdMax"] = value
+            elif field_name == "year":
+                if node.op == ">=":
+                    prefilled["yearMin"] = value
+                elif node.op == "<=":
+                    prefilled["yearMax"] = value
+            elif field_name == "lang":
+                prefilled["lang"] = value
+        else:
+            # Handle complex expressions by traversing operands
+            if hasattr(node, 'operands'):
+                for operand in node.operands:
+                    _traverse(operand)
+    
+    _traverse(ast)
+    return prefilled

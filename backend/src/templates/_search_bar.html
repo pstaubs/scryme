@@ -12,11 +12,11 @@
       class="absolute top-1/2 -translate-y-1/2 right-3 flex items-center justify-center w-6 h-6 rounded-full bg-surface-2 text-gray-400 hover:text-gray-600 hidden"
     ><i class="fas fa-xmark"></i></button>
   </div>
-  <a href="/advanced"
-    type="button" 
+  <button 
+    type="button" onclick="window.location.href='/advanced?q=' + encodeURIComponent(this.form.q.value)"
     class="{% if not ai_ready %}rounded-r-full{% endif %} border border-accent px-5 py-2.5 font-medium text-white hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 whitespace-nowrap">
     <i class="fa-solid fa-filter"></i>
-  </a>
+  </button>
   {% if ai_ready %}
   <button type="button" title="Ask in plain English"
           @click="ai = true; $nextTick(() => $refs.ainput && $refs.ainput.focus())"
