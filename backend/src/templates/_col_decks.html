@@ -5,7 +5,7 @@
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
   {{ list_sorting.controls("/collection/decks", sort_by, sort_dir, sort_by_price=True) }}
   {% if not read_only %}
-  <div class="flex justify-start md:justify-end gap-2 md:mb-4">
+  <div class="flex justify-start md:justify-end gap-2 mb-4">
     <a href="/decks/build" class="rounded-full bg-surface border border-edge  border-edge px-4 py-2 text-sm font-medium hover:border-accent whitespace-nowrap">
       ✨ Build from collection
     </a>

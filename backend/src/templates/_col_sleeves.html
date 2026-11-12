@@ -8,9 +8,9 @@
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
   {{ list_sorting.controls("/collection/sleeves", sort_by, sort_dir) }}
   {% if not read_only %}
-  <form method="post" action="/sleeves/new" class="flex gap-2 items-center mb-4" enctype="multipart/form-data">
+  <form method="post" action="/sleeves/new" class="flex justify-start md:justify-end flex-wrap md:flex-nowrap gap-2 items-center mb-4" enctype="multipart/form-data">
     <input type="text" name="name" required placeholder="New sleeve name"
-            class="flex-1 min-w-0 rounded-full bg-bg border border-edge px-3 py-2 w-40 text-sm hover:border-accent" />
+            class="flex-1 min-w-0 rounded-full bg-bg border border-edge px-3 py-2 w-40 min-w-40 text-sm hover:border-accent" />
     <input type="file" name="image" id="image" accept="image/*"
                class="rounded-full border border-edge px-3 py-2 w-60 text-xs hover:border-accent" />
     <div class="flex gap-2 items-center rounded-full bg-bg border border-edge px-4 p-1.5 text-sm hover:border-accent">
@@ -18,7 +18,7 @@
              class="w-12 h-6 cursor-pointer" />
       <span class="inline-flex items-center text-sm">Color</span>
     </div>
-    <button class="rounded-full bg-accent text-accent-fg px-3 py-2 text-sm font-medium text-no-wrap"><i class="fa-solid fa-plus"></i> Add Sleeve</button>
+    <button class="rounded-full bg-accent text-accent-fg px-3 py-2 text-sm font-medium whitespace-nowrap"><i class="fa-solid fa-plus"></i> Add Sleeve</button>
   </form>
   {% endif %}
 </div>

@@ -38,7 +38,7 @@
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     {{ list_sorting.controls("/collection/locations", sort_by, sort_dir, sort_by_quantity=True) }}
     {% if not read_only %}
-    <div class="flex justify-start md:justify-end gap-2 md:mb-4">
+    <div class="flex justify-start md:justify-end gap-2 mb-4">
       <form method="post" action="/collection/boxes/new" class="flex gap-2">
         <input type="text" name="name" required placeholder="New box name"
               class="flex-1 min-w-0 rounded-full bg-bg border border-edge px-3 py-2 text-sm hover:border-accent " />

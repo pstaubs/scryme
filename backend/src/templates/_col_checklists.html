@@ -6,7 +6,7 @@
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
   {{ list_sorting.controls("/collection/checklists", sort_by, sort_dir) }}
   {% if not read_only %}
-  <div class="flex justify-start md:justify-end gap-2 md:mb-4">
+  <div class="flex justify-start md:justify-end gap-2 mb-4">
     <a href="/checklists/new" class="rounded-full bg-accent text-accent-fg px-4 py-2 text-sm font-medium hover:opacity-90 whitespace-nowrap">
       <i class="fa-solid fa-plus"></i> New checklist
     </a>
