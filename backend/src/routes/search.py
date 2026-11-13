@@ -8,11 +8,11 @@ to the Scryfall CDN otherwise, so results never show broken images before the ca
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 

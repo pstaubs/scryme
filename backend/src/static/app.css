@@ -434,3 +434,42 @@ i.ms.ms-cost {
 .currency-wrapper input {
     padding-left: 30px !important; 
 }
+
+
+
+.loading-animator:after {
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: bottom;
+  -webkit-animation: ellipsis steps(4, end) 900ms infinite;
+  animation: ellipsis steps(4, end) 900ms infinite;
+  content: "...";
+  /* ascii code for the ellipsis character */
+  width: 0px;
+}
+
+@keyframes ellipsis {
+  to {
+    width: 14px;
+  }
+}
+
+@-webkit-keyframes ellipsis {
+  to {
+    width: 14px;
+  }
+}
+
+/* Tailwind override to force a htmx-indicator with the htmx-indicator-expand attribute to grow, not just toggle opacity */
+.htmx-indicator.htmx-indicator-expand {
+  display: none;
+  opacity: 0;
+  transition: opacity 300ms ease-in-out;
+}
+
+
+.htmx-request .htmx-indicator.htmx-indicator-expand,
+.htmx-indicator.htmx-indicator-expand.htmx-request {
+  display: inline-block; /* or block, flex, etc. depending on your layout */
+  opacity: 1;
+}

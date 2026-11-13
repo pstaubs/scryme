@@ -27,7 +27,7 @@ from src.config import get_settings
 from src.deck_builder import classify_role
 from src.deck_synergy import DeckProfile, card_synergy, deck_themes, deck_tribes
 from src.decks import deck_coverage, deck_stats
-from src.models import Card, CollectionCard, LLMSettings
+from src.models import Card, CollectionCard, Deck, LLMSettings
 from src.search import SearchError, build_search
 
 _UA = f"scryme/{__version__} (+https://github.com/Leyline-Coding/scryme)"
@@ -152,8 +152,8 @@ async def test_connection(cfg: LLMConfig, client: ChatClient | None = None) -> t
 
 # --- grounded deck features ---------------------------------------------------------------------
 
-def _decklist_text(cov) -> str:
-    lines = [f"{r.quantity} {r.name}" for r in cov.main]
+def _decklist_text(cov, useCombined: bool = True) -> str:
+    lines = [f"{r.quantity} {r.name}" for r in (cov.main_combined if useCombined else cov.main)]
     return "\n".join(lines)
 
 
@@ -179,6 +179,7 @@ _DECKBUILD_GUIDE = (
 @dataclass
 class DeckContext:
     name: str
+    description: str | None
     identity: set[str] = field(default_factory=set)  # color identity (union of the deck's cards)
     is_commander: bool = False
     commander: str = ""
@@ -203,6 +204,8 @@ class DeckContext:
     def block(self) -> str:
         """Grounded context block for a prompt."""
         lines = [f"Deck '{self.name}' — {self.format_note}."]
+        if self.description:
+            lines.append("Deck description: " + self.description)
         if len(self.commanders) > 1:
             lines.append("Possible commanders (deck has several legendary creatures): "
                          + ", ".join(self.commanders))
@@ -276,7 +279,7 @@ def _scan_deck_cards(info: dict) -> _DeckScan:
 
 
 
-async def deck_ai_context(session: AsyncSession, deck) -> DeckContext:
+async def deck_ai_context(session: AsyncSession, deck: Deck, useCombined: bool = True) -> DeckContext:
     """Rich grounded context for the AI deck features: identity, commander, themes, key cards."""
     cov = await deck_coverage(session, deck)
     stats = await deck_stats(session, deck)
@@ -298,10 +301,10 @@ async def deck_ai_context(session: AsyncSession, deck) -> DeckContext:
 
     tribes = deck_tribes(scan.legend_text, scan.creature_lines)
     return DeckContext(
-        name=deck.name, identity=scan.identity, is_commander=bool(scan.commander),
+        name=deck.name, description=deck.description, identity=scan.identity, is_commander=bool(scan.commander),
         commander=scan.commander, commander_text=scan.commander_text,
         commanders=scan.commanders[:4],
-        decklist=_decklist_text(cov), curve=curve, colors=colors,
+        decklist=_decklist_text(cov, useCombined=useCombined), curve=curve, colors=colors,
         themes=themes[:6], tribes=sorted(tribes)[:6], key_cards=key_cards,
     )
 
@@ -315,21 +318,6 @@ async def _chat_nonempty(client: ChatClient, messages: list[dict], retries: int 
         if text.strip():
             break
     return text
-
-
-async def analyze_deck(session: AsyncSession, deck, client: ChatClient) -> str:
-    """Return a prose analysis of the deck, grounded in its list, identity, themes, and stats."""
-    ctx = await deck_ai_context(session, deck)
-    messages = [
-        {"role": "system", "content":
-            "You are a concise Magic: The Gathering deckbuilding coach. Analyze THIS deck's "
-            "strengths, weaknesses, mana curve, and missing roles (ramp, card draw, removal, win "
-            "conditions) against the guidance below, and comment on how well it supports its "
-            "commander/theme. Be specific and brief. Do not invent cards that aren't real. "
-            + ctx.identity_rule() + "\n\n" + _DECKBUILD_GUIDE},
-        {"role": "user", "content": ctx.block()},
-    ]
-    return await _chat_nonempty(client, messages, retries=1, temperature=0.5)
 
 
 @dataclass
@@ -826,19 +814,30 @@ async def plan_upgrades(
 # --- deck coaching chat (#172) ------------------------------------------------------------------
 
 async def deck_chat(
-    session: AsyncSession, deck, history: list[dict], user_message: str, client: ChatClient,
+    session: AsyncSession,
+    client: ChatClient,
+    deck: Deck | None,
+    history: list[dict],
+    user_message: str,
+    interfaceContext: str = ''
 ) -> str:
     """One turn of a coaching conversation, grounded in the deck's list, identity, and themes."""
-    ctx = await deck_ai_context(session, deck)
     system = (
-        "You are a friendly, concise Magic: The Gathering deckbuilding coach for THIS deck. Give "
-        "specific, actionable advice that fits its commander/theme; only reference real Magic "
-        "cards. " + ctx.identity_rule() + " Keep replies short.\n\n"
-        + _DECKBUILD_GUIDE + "\n\n" + ctx.block()
+        "You are a friendly, concise Magic: The Gathering (MTG) coach. Give specific, actionable advice relevant to MTG cards, rules of the game, deckbuilding, and the like. At any time, only reference real MTG cards. Keep replies short.\n\n"
     )
+    if(interfaceContext == 'deck_building'): 
+        system += "The user is examining or building a deck, so provide advice that is relevant for MTG deck building in general or about the composition of the deck specifically or any other MTG card that might be a relevant match for their deck."
+        system += _DECKBUILD_GUIDE + "\n\n"
+    if(deck):
+        deck_ctx = await deck_ai_context(session, deck)
+        system += " "+deck_ctx.identity_rule()
+        system += "The user has opted to share the exact details of their deck as it looks right now. "
+        system += " "+deck_ctx.block()
+
     messages = [{"role": "system", "content": system}]
     messages += [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": user_message})
+
     return await _chat_nonempty(client, messages, retries=2, temperature=0.5, max_tokens=2000)
 
 

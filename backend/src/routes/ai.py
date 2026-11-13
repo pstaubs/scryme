@@ -16,7 +16,6 @@ from src.config import get_settings
 from src.db import get_session
 from src.llm import (
     ChatClient,
-    analyze_deck,
     answer_card_question,
     build_from_prompt,
     deck_chat,
@@ -38,7 +37,7 @@ _NOT_CONFIGURED = "AI isn't configured — set it up in Settings → AI."
 _UNREACHABLE = "Couldn't reach the AI endpoint. Check Settings → AI."
 _EMPTY = "The model returned an empty response — try again or use a larger token limit / model."
 _DECK_AI_ERROR_TMPL = "_deck_ai_error.html"
-_DECK_CHAT_LOG_TMPL = "_deck_chat_log.html"
+_DECK_CHAT_LOG_PLACEHOLDER = "Ask about this deck — e.g. “make it more aggressive”, “what should I cut?”, “how's my mana base?”"
 _CARD_ANSWER_TMPL = "_card_answer.html"
 
 
@@ -87,25 +86,6 @@ async def _load_deck(session: AsyncSession, deck_id: int) -> Deck:
     if deck is None:
         raise HTTPException(status_code=404, detail="Deck not found.")
     return deck
-
-
-@router.post("/decks/{deck_id}/analyze", response_class=HTMLResponse)
-async def deck_analyze(
-    request: Request, deck_id: int, session: AsyncSession = Depends(get_session)
-) -> HTMLResponse:
-    deck = await _load_deck(session, deck_id)
-    cfg = await get_config(session)
-    if not cfg.ready:
-        return templates.TemplateResponse(
-            request, _DECK_AI_ERROR_TMPL, {"message": _NOT_CONFIGURED})
-    try:
-        analysis = await analyze_deck(session, deck, ChatClient(cfg))
-    except (httpx.HTTPError, KeyError, IndexError, ValueError):
-        return templates.TemplateResponse(
-            request, _DECK_AI_ERROR_TMPL, {"message": _UNREACHABLE})
-    if not analysis.strip():
-        return templates.TemplateResponse(request, _DECK_AI_ERROR_TMPL, {"message": _EMPTY})
-    return templates.TemplateResponse(request, "_deck_analysis.html", {"analysis": analysis})
 
 
 @router.post("/decks/{deck_id}/suggest", response_class=HTMLResponse)
@@ -179,63 +159,116 @@ async def deck_upgrade(
     return templates.TemplateResponse(request, "_deck_upgrade.html", {"plan": plan})
 
 
-# --- deck coaching chat (#172) ------------------------------------------------------------------
-
-async def _chat_history(session: AsyncSession, deck_id: int) -> list[DeckChatMessage]:
+async def _deck_chat_history(session: AsyncSession, deck_id: int) -> list[DeckChatMessage]:
     return list((await session.execute(
         select(DeckChatMessage).where(DeckChatMessage.deck_id == deck_id)
         .order_by(DeckChatMessage.id)
     )).scalars().all())
 
 
-@router.get("/decks/{deck_id}/chat", response_class=HTMLResponse)
-async def deck_chat_page(
+
+# --- deck AI modal  -----------------------------------------------------------------------
+'''
+
+
+@router.post("/decks/{deck_id}/ai/suggest", response_class=HTMLResponse)
+async def deck_ai_suggest(
     request: Request, deck_id: int, session: AsyncSession = Depends(get_session)
 ) -> HTMLResponse:
+    """Suggest cards from collection via AI."""
     deck = await _load_deck(session, deck_id)
     cfg = await get_config(session)
-    return templates.TemplateResponse(
-        request, "deck_chat.html",
-        {"deck": deck, "messages": await _chat_history(session, deck_id), "ai_ready": cfg.ready},
-    )
+    if not cfg.ready:
+        return templates.TemplateResponse(
+            request, _DECK_AI_ERROR_TMPL, {"message": _NOT_CONFIGURED})
+    try:
+        result = await suggest_from_collection(session, deck, ChatClient(cfg))
+    except (httpx.HTTPError, KeyError, IndexError, ValueError):
+        return templates.TemplateResponse(
+            request, _DECK_AI_ERROR_TMPL, {"message": _UNREACHABLE})
+    if result.empty:
+        return templates.TemplateResponse(request, _DECK_AI_ERROR_TMPL, {"message": _EMPTY})
+    return templates.TemplateResponse(request, "_deck_suggest.html", {"result": result})
 
 
-@router.post("/decks/{deck_id}/chat", response_class=HTMLResponse)
-async def deck_chat_send(
-    request: Request, deck_id: int, message: str = Form(""),
+@router.post("/decks/{deck_id}/ai/upgrade", response_class=HTMLResponse)
+async def deck_ai_upgrade(
+    request: Request, deck_id: int, budget: float = Form(50.0),
     session: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
+    """Plan upgrades via AI."""
+    deck = await _load_deck(session, deck_id)
+    cfg = await get_config(session)
+    if not cfg.ready:
+        return templates.TemplateResponse(
+            request, _DECK_AI_ERROR_TMPL, {"message": _NOT_CONFIGURED})
+    try:
+        plan = await plan_upgrades(session, deck, max(0.0, budget), ChatClient(cfg))
+    except (httpx.HTTPError, KeyError, IndexError, ValueError):
+        return templates.TemplateResponse(
+            request, _DECK_AI_ERROR_TMPL, {"message": _UNREACHABLE})
+    if plan.empty:
+        return templates.TemplateResponse(request, _DECK_AI_ERROR_TMPL, {"message": _EMPTY})
+    return templates.TemplateResponse(request, "_deck_upgrade.html", {"plan": plan})
+'''
+
+
+@router.post("/decks/{deck_id}/ai/chat", response_class=HTMLResponse)
+async def deck_ai_modal_chat(
+    request: Request,
+    deck_id: int,
+    message: str = Form(""),
+    include_deck: bool = Form(True),
+    include_collection: bool = Form(False),
+    session: AsyncSession = Depends(get_session),
+) -> HTMLResponse:
+    """Handle chat messages in the Deck AI modal."""
     deck = await _load_deck(session, deck_id)
     cfg = await get_config(session)
     text = message.strip()
     if not cfg.ready or not text:
+        # Return just the chat log without adding new message
         return templates.TemplateResponse(
-            request, _DECK_CHAT_LOG_TMPL, {"messages": await _chat_history(session, deck_id)})
-    prior = await _chat_history(session, deck_id)
+            request, "_ai_chat_log.html", {"messages": await _deck_chat_history(session, deck_id), 'placeholder':_DECK_CHAT_LOG_PLACEHOLDER})
+    prior = await _deck_chat_history(session, deck_id)
     history = [{"role": m.role, "content": m.content} for m in prior]
     try:
-        reply = await deck_chat(session, deck, history, text, ChatClient(cfg))
+        reply = await deck_chat(session, ChatClient(cfg), deck if include_deck else None, history, text, interfaceContext='deck_building')
     except (httpx.HTTPError, KeyError, IndexError, ValueError):
         reply = ""
+    
     session.add(DeckChatMessage(deck_id=deck_id, role="user", content=text))
     session.add(DeckChatMessage(deck_id=deck_id, role="assistant",
                                 content=reply or "(the AI endpoint didn't respond — try again)"))
     await session.commit()
+    
     return templates.TemplateResponse(
-        request, _DECK_CHAT_LOG_TMPL, {"messages": await _chat_history(session, deck_id)})
+        request, "_ai_chat_log.html", {"messages": await _deck_chat_history(session, deck_id), 'placeholder':_DECK_CHAT_LOG_PLACEHOLDER})
 
 
-@router.post("/decks/{deck_id}/chat/clear", response_class=HTMLResponse)
-async def deck_chat_clear(
+@router.post("/decks/{deck_id}/ai/modal/open", response_class=HTMLResponse)
+async def deck_chat_modal_open(
     request: Request, deck_id: int, session: AsyncSession = Depends(get_session)
 ) -> HTMLResponse:
+    """Open the deck chat modal."""
+    deck = await _load_deck(session, deck_id)
+    cfg = await get_config(session)
+    return templates.TemplateResponse(
+        request, "_ai_chat_modal.html",
+        {"title": 'AI Deck Assistant', "deck": deck, "messages": await _deck_chat_history(session, deck_id), 'placeholder':_DECK_CHAT_LOG_PLACEHOLDER, "ai_ready": cfg.ready, 'include_deck': True},
+    )
+
+
+@router.post("/decks/{deck_id}/ai/modal/clear", response_class=HTMLResponse)
+async def deck_ai_modal_clear(
+    request: Request, deck_id: int, session: AsyncSession = Depends(get_session)
+) -> HTMLResponse:
+    """Clear chat history in the AI modal."""
     await _load_deck(session, deck_id)
     await session.execute(delete(DeckChatMessage).where(DeckChatMessage.deck_id == deck_id))
     await session.commit()
-    return templates.TemplateResponse(request, _DECK_CHAT_LOG_TMPL, {"messages": []})
+    return templates.TemplateResponse(request, "_ai_chat_log.html", {"messages": [], 'placeholder':_DECK_CHAT_LOG_PLACEHOLDER})
 
-
-# --- card rules Q&A (#175) ----------------------------------------------------------------------
 
 @router.post("/card/{scryfall_id}/ask", response_class=HTMLResponse)
 async def card_ask(

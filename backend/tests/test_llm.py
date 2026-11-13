@@ -7,7 +7,6 @@ import pytest
 from src.decks import create_deck
 from src.llm import (
     LLMConfig,
-    analyze_deck,
     get_config,
     save_config,
     suggest_from_collection,
@@ -76,14 +75,6 @@ async def test_connection_reports_ok_and_failure(session):
     assert not bad and "reach" in msg.lower()
     off, _ = await check_connection(LLMConfig())
     assert not off
-
-
-@pytest.mark.asyncio
-async def test_analyze_deck_grounds_and_returns_text(session):
-    await _own(session, "Lightning Bolt")
-    deck = await create_deck(session, "Burn", "1 Lightning Bolt")
-    text = await analyze_deck(session, deck, FakeChat(reply="This is an aggressive red deck."))
-    assert "aggressive" in text
 
 
 @pytest.mark.asyncio

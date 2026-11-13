@@ -1,0 +1,12 @@
+{# Deck coaching chat transcript (#172). #}
+{% if messages %}
+  {% for m in messages %}
+    {% if m.role == 'user' %}
+      <div class="ml-auto max-w-[85%] rounded-lg bg-accent px-3 py-2 text-sm whitespace-pre-line">{{ m.content }}</div>
+    {% else %}
+      <div class="mr-auto max-w-[90%] rounded-lg bg-surface-2 px-3 py-2 text-sm whitespace-pre-line leading-relaxed">{{ m.content }}</div>
+    {% endif %}
+  {% endfor %}
+{% else %}
+  <p class="text-sm text-muted">{{placeholder or "Ask a question about the game of Magic The Gathering or about your library."}}</p>
+{% endif %}
